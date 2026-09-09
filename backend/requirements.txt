@@ -1,0 +1,21 @@
+# Web Framework
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Stock Data & Analysis
+yfinance
+pandas
+numpy
+ta
+fear-greed
+
+# AI Agent
+langchain-ollama
+
+# Utilities
+pydantic
+pydantic-settings
+python-dotenv
+httpx
+pdfplumber

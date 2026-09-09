@@ -1,0 +1,294 @@
+@theme inline {
+  --font-sans: var(--font-outfit);
+
+  --color-brand-25: #f2f7ff;
+  --color-brand-50: #ecf3ff;
+  --color-brand-100: #dde9ff;
+  --color-brand-200: #c2d6ff;
+  --color-brand-300: #9cb9ff;
+  --color-brand-400: #7592ff;
+  --color-brand-500: #465fff;
+  --color-brand-600: #3641f5;
+  --color-brand-700: #2a31d8;
+  --color-brand-800: #252dae;
+  --color-brand-900: #262e89;
+  --color-brand-950: #161950;
+
+  --color-gray-25: #fcfcfd;
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f2f4f7;
+  --color-gray-200: #e4e7ec;
+  --color-gray-300: #d0d5dd;
+  --color-gray-400: #98a2b3;
+  --color-gray-500: #667085;
+  --color-gray-600: #475467;
+  --color-gray-700: #344054;
+  --color-gray-800: #1d2939;
+  --color-gray-900: #101828;
+  --color-gray-950: #0c111d;
+
+  --color-success-50: #ecfdf3;
+  --color-success-500: #12b76a;
+  --color-success-600: #039855;
+  --color-success-700: #027a48;
+  --color-warning-50: #fffaeb;
+  --color-warning-500: #f79009;
+  --color-warning-600: #dc6803;
+  --color-warning-700: #b54708;
+  --color-error-50: #fef3f2;
+  --color-error-500: #f04438;
+  --color-error-600: #d92d20;
+  --color-error-700: #b42318;
+
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --shadow-theme-xs: 0 1px 2px 0 rgb(16 24 40 / 0.05);
+  --shadow-theme-sm: 0 1px 3px 0 rgb(16 24 40 / 0.1), 0 1px 2px -1px rgb(16 24 40 / 0.1);
+  --shadow-theme-md: 0 4px 8px -2px rgb(16 24 40 / 0.1), 0 2px 4px -2px rgb(16 24 40 / 0.06);
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #f9fafb;
+  --foreground: #101828;
+  --surface: #ffffff;
+  --surface-subtle: #f2f4f7;
+  --border: #e4e7ec;
+  --muted: #667085;
+  --ring: #465fff;
+}
+
+.dark {
+  --background: #101828;
+  --foreground: rgb(255 255 255 / 0.9);
+  --surface: #1d2939;
+  --surface-subtle: #344054;
+  --border: #344054;
+  --muted: #98a2b3;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-outfit), sans-serif;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .ui-page {
+    min-height: 100%;
+    background: var(--background);
+    color: var(--foreground);
+  }
+
+  .ui-container {
+    margin-inline: auto;
+    width: 100%;
+    max-width: 1536px;
+    padding: 1rem;
+  }
+
+  .ui-card {
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    background: var(--surface);
+    box-shadow: var(--shadow-theme-xs);
+  }
+
+  .ui-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.25rem 1.25rem 0;
+  }
+
+  .ui-card-body {
+    padding: 1.25rem;
+  }
+
+  .ui-title {
+    color: var(--foreground);
+    font-size: 1.125rem;
+    font-weight: 600;
+    line-height: 1.5rem;
+  }
+
+  .ui-description {
+    margin-top: 0.25rem;
+    color: var(--muted);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+
+  .ui-button {
+    display: inline-flex;
+    min-height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 0.5rem;
+    padding: 0.625rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+  }
+
+  .ui-button-primary {
+    border: 1px solid #465fff;
+    background: #465fff;
+    color: #ffffff;
+    box-shadow: var(--shadow-theme-xs);
+  }
+
+  .ui-button-primary:hover {
+    border-color: #3641f5;
+    background: #3641f5;
+  }
+
+  .ui-button-secondary {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--foreground);
+    box-shadow: var(--shadow-theme-xs);
+  }
+
+  .ui-button-secondary:hover {
+    background: var(--surface-subtle);
+  }
+
+  .ui-input {
+    min-height: 2.75rem;
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--surface);
+    padding: 0.625rem 0.875rem;
+    color: var(--foreground);
+    font-size: 0.875rem;
+    box-shadow: var(--shadow-theme-xs);
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+
+  .ui-input::placeholder {
+    color: #98a2b3;
+  }
+
+  .ui-input:focus {
+    border-color: #465fff;
+    box-shadow: 0 0 0 3px rgb(70 95 255 / 0.12);
+    outline: none;
+  }
+
+  .ui-icon-box {
+    display: inline-flex;
+    height: 3rem;
+    width: 3rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.75rem;
+    background: var(--surface-subtle);
+    color: var(--foreground);
+  }
+
+  .ui-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 9999px;
+    padding: 0.125rem 0.625rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.25rem;
+  }
+
+  .ui-badge-success {
+    background: #ecfdf3;
+    color: #027a48;
+  }
+
+  .ui-badge-warning {
+    background: #fffaeb;
+    color: #b54708;
+  }
+
+  .ui-badge-error {
+    background: #fef3f2;
+    color: #b42318;
+  }
+
+  .dark .ui-badge-success {
+    background: rgb(18 183 106 / 0.15);
+    color: #12b76a;
+  }
+
+  .dark .ui-badge-warning {
+    background: rgb(247 144 9 / 0.15);
+    color: #f79009;
+  }
+
+  .dark .ui-badge-error {
+    background: rgb(240 68 56 / 0.15);
+    color: #f04438;
+  }
+
+  .ui-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    background: var(--surface);
+  }
+
+  .ui-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+  }
+
+  .ui-table th {
+    background: var(--surface-subtle);
+    padding: 0.75rem 1.25rem;
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .ui-table td {
+    border-top: 1px solid var(--border);
+    padding: 1rem 1.25rem;
+    color: var(--muted);
+    font-size: 0.875rem;
+  }
+}
+
+@media (min-width: 640px) {
+  .ui-container {
+    padding: 1.5rem;
+  }
+
+  .ui-card-header {
+    padding: 1.5rem 1.5rem 0;
+  }
+
+  .ui-card-body {
+    padding: 1.5rem;
+  }
+}
