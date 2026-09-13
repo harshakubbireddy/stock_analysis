@@ -2,7 +2,7 @@
 
 Two event types:
   - Text:    data: {"type": "text", "content": "..."}\n\n
-  - UI:      data: {"type": "component", "component": "market_overview", "props": {...}}\n\n
+  - UI:      data: {"type": "component", "component": "stock_market_overview", "props": {...}}\n\n
   - End:     data: [DONE]\n\n
 """
 import json
@@ -25,12 +25,21 @@ def stream_response(message: str):
 
     - ToolMessage whose content is a dict with "component" → UI event
     - AIMessage with text content and no tool calls → text event
+      (includes the agent's news summary after news_summary runs)
     """
     human_msg = HumanMessage(message)
     for output in graph.stream({"messages": [human_msg]}):
         for node_name, state_update in output.items():
             if not state_update:
                 continue
+            # News node: it fetched headlines → show them as a UI card
+            if node_name == "news" and state_update.get("news_items"):
+                event = {
+                    "type": "component",
+                    "component": "news_summary",
+                    "props": {"items": state_update["news_items"]},
+                }
+                yield f"data: {json.dumps(event)}\n\n"
             for msg in state_update.get("messages", []):
                 # Tool results: check if it's a UI component
                 if isinstance(msg, ToolMessage):
@@ -40,7 +49,7 @@ def stream_response(message: str):
                             event = {"type": "component", **result}
                             yield f"data: {json.dumps(event)}\n\n"
                     except (json.JSONDecodeError, TypeError):
-                        pass  # plain string tool result — skip
+                        pass  # plain string tool result — goes back to the agent
                 # AI text responses (not tool calls)
                 elif isinstance(msg, AIMessage) and msg.content and not getattr(msg, "tool_calls", None):
                     event = {"type": "text", "content": msg.content}

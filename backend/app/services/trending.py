@@ -1,8 +1,10 @@
 import yfinance as yf
 
+from app.core.cache import cached_model, store_model
 from app.schemas.trending import TrendingResponse, TrendingStock
 
 RESULT_LIMIT = 6
+CACHE_TTL_SECONDS = 300
 
 
 def _screen(query: str) -> list[TrendingStock]:
@@ -26,8 +28,15 @@ def _screen(query: str) -> list[TrendingStock]:
 
 
 def get_trending() -> TrendingResponse:
-    return TrendingResponse(
+    key = "trending"
+    hit = cached_model(key, TrendingResponse, ttl=CACHE_TTL_SECONDS)
+    if hit is not None:
+        return hit
+
+    result = TrendingResponse(
         most_active=_screen("most_actives"),
         gainers=_screen("day_gainers"),
         losers=_screen("day_losers"),
     )
+    store_model(key, result)
+    return result

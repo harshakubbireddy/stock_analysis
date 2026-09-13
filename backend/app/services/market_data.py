@@ -1,7 +1,10 @@
 import pandas as pd
 import yfinance as yf
 
+from app.core.cache import cached_model, store_model
 from app.schemas.market import MarketOverviewResponse, MarketQuote
+
+CACHE_TTL_SECONDS = 300
 
 US_INDICES = [
     ("^GSPC", "S&P 500"),
@@ -82,9 +85,16 @@ def _fetch_quotes(symbols_with_names: list[tuple[str, str]]) -> list[MarketQuote
 
 
 def get_market_overview() -> MarketOverviewResponse:
-    return MarketOverviewResponse(
+    key = "market:overview"
+    hit = cached_model(key, MarketOverviewResponse, ttl=CACHE_TTL_SECONDS)
+    if hit is not None:
+        return hit
+
+    result = MarketOverviewResponse(
         usa=_fetch_quotes(US_INDICES),
         india=_fetch_quotes(INDIA_INDICES),
         crypto=_fetch_quotes(CRYPTO_ASSETS),
         usa_sectors=_fetch_quotes(US_SECTOR_ETFS),
     )
+    store_model(key, result)
+    return result

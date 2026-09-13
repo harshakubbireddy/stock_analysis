@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, clearCache } from "@/lib/api";
 import type { Fund, TransactionsData } from "@/types/thirteenf";
 
 export function useThirteenF() {
@@ -52,7 +52,7 @@ export function useThirteenF() {
 
   const refetch = useCallback(() => {
     if (selectedCik) {
-      void fetchTransactions(selectedCik);
+      void clearCache().then(() => fetchTransactions(selectedCik));
     }
   }, [selectedCik, fetchTransactions]);
 

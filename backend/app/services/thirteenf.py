@@ -1,9 +1,9 @@
-import time
 import xml.etree.ElementTree as ET
 
 import httpx
 from fastapi import HTTPException
 
+from app.core.cache import cached_model, store_model
 from app.core.config import settings
 from app.schemas.thirteenf import Fund, HoldingsResponse, Holding, Transaction, TransactionsResponse
 
@@ -27,7 +27,7 @@ FUNDS: list[Fund] = [
     Fund(name="Clarium Capital Management (Peter Thiel)", cik="0001282816"),
 ]
 
-_holdings_cache: dict[str, tuple[float, HoldingsResponse]] = {}
+_holdings_key = "thirteenf:holdings:{cik}"
 
 
 def _headers() -> dict[str, str]:
@@ -164,9 +164,10 @@ def get_funds() -> list[Fund]:
 
 def get_latest_holdings(cik: str) -> HoldingsResponse:
     cik = cik.zfill(10)
-    cached = _holdings_cache.get(cik)
-    if cached and time.time() - cached[0] < CACHE_TTL_SECONDS:
-        return cached[1]
+    key = _holdings_key.format(cik=cik)
+    hit = cached_model(key, HoldingsResponse, ttl=CACHE_TTL_SECONDS)
+    if hit is not None:
+        return hit
 
     fund_name = next((fund.name for fund in FUNDS if fund.cik == cik), None)
     submissions = _fetch_submissions(cik)
@@ -184,11 +185,11 @@ def get_latest_holdings(cik: str) -> HoldingsResponse:
         total_value_usd=sum(h.value_usd for h in holdings),
         holdings=holdings,
     )
-    _holdings_cache[cik] = (time.time(), result)
+    store_model(key, result)
     return result
 
 
-_transactions_cache: dict[str, tuple[float, TransactionsResponse]] = {}
+_transactions_key = "thirteenf:transactions:{cik}"
 
 
 def _find_latest_two_filings(submissions: dict) -> list[tuple[str, str | None, str | None]]:
@@ -212,9 +213,10 @@ def _find_latest_two_filings(submissions: dict) -> list[tuple[str, str | None, s
 
 def get_latest_transactions(cik: str) -> TransactionsResponse:
     cik = cik.zfill(10)
-    cached = _transactions_cache.get(cik)
-    if cached and time.time() - cached[0] < CACHE_TTL_SECONDS:
-        return cached[1]
+    key = _transactions_key.format(cik=cik)
+    hit = cached_model(key, TransactionsResponse, ttl=CACHE_TTL_SECONDS)
+    if hit is not None:
+        return hit
 
     fund_name = next((fund.name for fund in FUNDS if fund.cik == cik), None)
     submissions = _fetch_submissions(cik)
@@ -299,5 +301,5 @@ def get_latest_transactions(cik: str) -> TransactionsResponse:
         prev_period=prev_period,
         transactions=transactions[:MAX_HOLDINGS],
     )
-    _transactions_cache[cik] = (time.time(), result)
+    store_model(key, result)
     return result

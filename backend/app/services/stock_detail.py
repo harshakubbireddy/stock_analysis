@@ -5,11 +5,15 @@ from email.utils import parsedate_to_datetime
 import httpx
 import yfinance as yf
 
+from app.core.cache import cached_model, store_model
 from app.schemas.stock_detail import ChartPoint, NewsFeedResponse, NewsItem, StockDetail
 
 NEWS_PER_SYMBOL = 3
 NEWS_FEED_LIMIT = 9
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search"
+
+STOCK_DETAIL_TTL = 300
+NEWS_FEED_TTL = 600
 
 
 def _round(value: object, digits: int = 2) -> float | None:
@@ -20,6 +24,11 @@ def _round(value: object, digits: int = 2) -> float | None:
 
 
 def get_stock_detail(symbol: str) -> StockDetail:
+    key = f"stock_detail:{symbol}"
+    hit = cached_model(key, StockDetail, ttl=STOCK_DETAIL_TTL)
+    if hit is not None:
+        return hit
+
     ticker = yf.Ticker(symbol)
     detail = StockDetail(symbol=symbol, name=symbol)
 
@@ -57,6 +66,7 @@ def get_stock_detail(symbol: str) -> StockDetail:
     except Exception:
         pass
 
+    store_model(key, detail)
     return detail
 
 
@@ -149,7 +159,54 @@ def get_google_news_feed(symbols: list[str]) -> NewsFeedResponse:
     return NewsFeedResponse(items=items[:NEWS_FEED_LIMIT])
 
 
+def get_news_for_query(query: str, count: int = 10) -> NewsFeedResponse:
+    """Google News search for a free-text query — used by the AI agent's
+    news_summary tool. The LLM decides the query based on the user's question.
+    """
+    key = f"news_query:{query}"
+    hit = cached_model(key, NewsFeedResponse, ttl=NEWS_FEED_TTL)
+    if hit is not None:
+        return hit
+
+    response = httpx.get(
+        GOOGLE_NEWS_RSS,
+        params={"q": query, "hl": "en-US", "gl": "US", "ceid": "US:en"},
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=10,
+        follow_redirects=True,
+    )
+    response.raise_for_status()
+    root = ET.fromstring(response.text)
+
+    items: list[NewsItem] = []
+    for element in root.findall("./channel/item")[:count]:
+        title = element.findtext("title") or ""
+        source = element.find("source")
+        publisher = source.text if source is not None else None
+        if publisher and title.endswith(f" - {publisher}"):
+            title = title[: -len(f" - {publisher}")]
+        pub_date = element.findtext("pubDate")
+        published = None
+        if pub_date:
+            try:
+                published = parsedate_to_datetime(pub_date).isoformat()
+            except (TypeError, ValueError):
+                pass
+        if title:
+            items.append(NewsItem(title=title, publisher=publisher,
+                                  url=element.findtext("link"), published=published,
+                                  symbol=query))
+    result = NewsFeedResponse(items=items)
+    store_model(key, result)
+    return result
+
+
 def get_news_feed(symbols: list[str]) -> NewsFeedResponse:
+    key = "news:" + ",".join(symbols)
+    hit = cached_model(key, NewsFeedResponse, ttl=NEWS_FEED_TTL)
+    if hit is not None:
+        return hit
+
     items: list[NewsItem] = []
     seen_urls: set[str] = set()
     for symbol in symbols:
@@ -161,14 +218,18 @@ def get_news_feed(symbols: list[str]) -> NewsFeedResponse:
             parsed = _parse_news_item(raw, symbol)
             if parsed is None:
                 continue
-            key = parsed.url or parsed.title
-            if key in seen_urls:
+            dedupe_key = parsed.url or parsed.title
+            if dedupe_key in seen_urls:
                 continue
-            seen_urls.add(key)
+            seen_urls.add(dedupe_key)
             items.append(parsed)
 
     if not items:
-        return get_google_news_feed(symbols)
+        result = get_google_news_feed(symbols)
+        store_model(key, result)
+        return result
 
     items.sort(key=lambda item: item.published or "", reverse=True)
-    return NewsFeedResponse(items=items[:NEWS_FEED_LIMIT])
+    result = NewsFeedResponse(items=items[:NEWS_FEED_LIMIT])
+    store_model(key, result)
+    return result

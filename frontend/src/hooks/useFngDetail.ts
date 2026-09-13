@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, clearCache } from "@/lib/api";
 import type { FngDetail } from "@/types/sentiment";
 
 export function useFngDetail(endpoint: string) {
@@ -26,7 +26,7 @@ export function useFngDetail(endpoint: string) {
 
   const refetch = useCallback(() => {
     setIsLoading(true);
-    void fetchFng();
+    void clearCache().then(() => fetchFng());
   }, [fetchFng]);
 
   useEffect(() => {

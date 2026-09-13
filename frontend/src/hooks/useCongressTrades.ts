@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, clearCache } from "@/lib/api";
 import type { CongressTradesData, Trader } from "@/types/congress";
 
 export function useCongressTrades() {
@@ -56,7 +56,7 @@ export function useCongressTrades() {
 
   const refetch = useCallback(() => {
     if (selectedName) {
-      void fetchTrades(selectedName);
+      void clearCache().then(() => fetchTrades(selectedName));
     }
   }, [selectedName, fetchTrades]);
 

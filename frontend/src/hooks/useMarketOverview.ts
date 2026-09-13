@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, clearCache } from "@/lib/api";
 import type { MarketOverview } from "@/types/market";
 
 export function useMarketOverview() {
@@ -28,7 +28,7 @@ export function useMarketOverview() {
 
   const refetch = useCallback(() => {
     setIsLoading(true);
-    void fetchOverview();
+    void clearCache().then(() => fetchOverview());
   }, [fetchOverview]);
 
   useEffect(() => {

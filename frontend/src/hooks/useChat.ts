@@ -25,14 +25,15 @@ const API_BASE_URL =
  */
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [lastComponent, setLastComponent] = useState<ChatComponent | null>(null);
+  const [components, setComponents] = useState<ChatComponent[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   async function sendMessage(text: string) {
     if (!text.trim() || isLoading) return;
 
-    // Add the user's message right away
+    // Add the user's message right away, clear previous components
     setMessages((prev) => [...prev, { role: "user", content: text }]);
+    setComponents([]);
     setIsLoading(true);
 
     // Add an empty assistant message we'll fill in as text arrives
@@ -76,11 +77,11 @@ export function useChat() {
                 return next;
               });
             } else if (event.type === "component") {
-              // Send component to the UI panel (outside chat)
-              setLastComponent({
-                name: event.component,
-                props: event.props,
-              });
+              // Append component to the UI panel (outside chat)
+              setComponents((prev) => [
+                ...prev,
+                { name: event.component, props: event.props },
+              ]);
             }
           } catch {
             // Not valid JSON — skip
@@ -101,5 +102,5 @@ export function useChat() {
     }
   }
 
-  return { messages, isLoading, sendMessage, lastComponent };
+  return { messages, isLoading, sendMessage, components };
 }

@@ -1,6 +1,5 @@
 import io
 import re
-import time
 import zipfile
 from datetime import date, datetime
 
@@ -8,6 +7,7 @@ import httpx
 import pdfplumber
 from fastapi import HTTPException
 
+from app.core.cache import cached_model, get_raw, set_raw, store_model
 from app.schemas.congress import CongressTrade, CongressTradesResponse, Trader
 
 INDEX_URL = "https://disclosures-clerk.house.gov/public_disc/financial-pdfs/{year}FD.zip"
@@ -42,8 +42,9 @@ TX_LABELS = {"P": "purchase", "S": "sale", "S (partial)": "sale_partial", "E": "
 
 HEADERS = {"User-Agent": "StockAnalysisApp contact@example.com"}
 
-_index_cache: dict[int, tuple[float, list[dict]]] = {}
-_pdf_cache: dict[str, list[dict]] = {}
+_index_key = "congress:index:{year}"
+_pdf_key = "congress:pdf:{doc_id}"
+_trades_key = "congress:trades:{name}"
 
 
 def _parse_amount(value: str | None) -> int | None:
@@ -60,9 +61,10 @@ def _to_iso(us_date: str | None) -> str | None:
 
 
 def _fetch_index(year: int) -> list[dict]:
-    cached = _index_cache.get(year)
-    if cached and time.time() - cached[0] < CACHE_TTL_SECONDS:
-        return cached[1]
+    key = _index_key.format(year=year)
+    cached = get_raw(key, ttl=CACHE_TTL_SECONDS)
+    if cached is not None:
+        return cached
 
     try:
         response = httpx.get(INDEX_URL.format(year=year), headers=HEADERS, timeout=30.0)
@@ -89,7 +91,7 @@ def _fetch_index(year: int) -> list[dict]:
                         "year": year,
                     }
                 )
-    _index_cache[year] = (time.time(), rows)
+    set_raw(key, rows)
     return rows
 
 
@@ -135,8 +137,10 @@ def _parse_pdf(content: bytes) -> list[dict]:
 
 
 def _get_filing_trades(year: int, doc_id: str) -> list[dict]:
-    if doc_id in _pdf_cache:
-        return _pdf_cache[doc_id]
+    key = _pdf_key.format(doc_id=doc_id)
+    cached = get_raw(key, ttl=CACHE_TTL_SECONDS)
+    if cached is not None:
+        return cached
     try:
         response = httpx.get(
             PDF_URL.format(year=year, doc_id=doc_id), headers=HEADERS, timeout=30.0
@@ -147,7 +151,7 @@ def _get_filing_trades(year: int, doc_id: str) -> list[dict]:
             status_code=502, detail=f"Failed to fetch PTR filing {doc_id}: {exc}"
         ) from exc
     trades = _parse_pdf(response.content)
-    _pdf_cache[doc_id] = trades
+    set_raw(key, trades)
     return trades
 
 
@@ -159,6 +163,11 @@ def get_trades(name: str) -> CongressTradesResponse:
     query = name.strip()
     if not query:
         raise HTTPException(status_code=400, detail="Name is required")
+
+    key = _trades_key.format(name=query.lower())
+    hit = cached_model(key, CongressTradesResponse, ttl=CACHE_TTL_SECONDS)
+    if hit is not None:
+        return hit
 
     current_year = date.today().year
     filings: list[dict] = []
@@ -205,4 +214,6 @@ def get_trades(name: str) -> CongressTradesResponse:
         (t.name for t in TRADERS if t.last_name.lower() == query.lower()),
         filings[0]["name"],
     )
-    return CongressTradesResponse(query=query, filer=filer, trades=trades)
+    result = CongressTradesResponse(query=query, filer=filer, trades=trades)
+    store_model(key, result)
+    return result

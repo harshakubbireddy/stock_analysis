@@ -4,6 +4,7 @@ import httpx
 import pandas as pd
 import yfinance as yf
 
+from app.core.cache import cached_model, store_model
 from app.schemas.sentiment import (
     FngComparison,
     FngDetailResponse,
@@ -17,6 +18,9 @@ CRYPTO_FNG_LIMIT = 30
 CRYPTO_FNG_DETAIL_LIMIT = 365
 CNN_FNG_DETAIL_PERIOD = "12m"
 VIX_SPARKLINE_PERIOD = "5d"
+
+OVERVIEW_CACHE_TTL = 300
+DETAIL_CACHE_TTL = 3600
 
 
 def _fng_rating(score: float) -> str:
@@ -171,11 +175,18 @@ def _vix() -> SentimentCard:
 
 
 def get_sentiment_overview() -> SentimentOverviewResponse:
-    return SentimentOverviewResponse(
+    key = "sentiment:overview"
+    hit = cached_model(key, SentimentOverviewResponse, ttl=OVERVIEW_CACHE_TTL)
+    if hit is not None:
+        return hit
+
+    result = SentimentOverviewResponse(
         cards=[
             _vix(),
         ]
     )
+    store_model(key, result)
+    return result
 
 
 def _crypto_fng_comparison(payload: list[dict], label: str, days_back: int) -> FngComparison | None:
@@ -193,6 +204,11 @@ def _crypto_fng_comparison(payload: list[dict], label: str, days_back: int) -> F
 
 
 def get_crypto_fng_detail() -> FngDetailResponse:
+    key = "sentiment:crypto_fng_detail"
+    hit = cached_model(key, FngDetailResponse, ttl=DETAIL_CACHE_TTL)
+    if hit is not None:
+        return hit
+
     try:
         response = httpx.get(
             CRYPTO_FNG_URL,
@@ -203,11 +219,13 @@ def get_crypto_fng_detail() -> FngDetailResponse:
         payload = response.json().get("data", [])
 
         if not payload:
-            return FngDetailResponse(
+            result = FngDetailResponse(
                 rating="Unavailable",
                 source="alternative.me",
                 error="No data returned",
             )
+            store_model(key, result)
+            return result
 
         latest = payload[0]
         score = float(latest.get("value", 0))
@@ -230,7 +248,7 @@ def get_crypto_fng_detail() -> FngDetailResponse:
             if c is not None
         ]
 
-        return FngDetailResponse(
+        result = FngDetailResponse(
             value=round(score, 1),
             rating=str(latest.get("value_classification") or _fng_rating(score)).title(),
             source="alternative.me",
@@ -238,6 +256,8 @@ def get_crypto_fng_detail() -> FngDetailResponse:
             comparisons=comparisons,
             history=history,
         )
+        store_model(key, result)
+        return result
     except Exception as exc:
         return FngDetailResponse(
             rating="Unavailable",
@@ -260,6 +280,11 @@ def _cnn_fng_comparison(points: list, label: str, days_back: int) -> FngComparis
 
 
 def get_cnn_fng_detail() -> FngDetailResponse:
+    key = "sentiment:cnn_fng_detail"
+    hit = cached_model(key, FngDetailResponse, ttl=DETAIL_CACHE_TTL)
+    if hit is not None:
+        return hit
+
     try:
         import fear_greed
     except ImportError:
@@ -295,7 +320,7 @@ def get_cnn_fng_detail() -> FngDetailResponse:
         ]
 
         latest_date = points[0].date if points else None
-        return FngDetailResponse(
+        result = FngDetailResponse(
             value=round(score, 1),
             rating=rating,
             source="CNN",
@@ -303,6 +328,8 @@ def get_cnn_fng_detail() -> FngDetailResponse:
             comparisons=comparisons,
             history=history,
         )
+        store_model(key, result)
+        return result
     except Exception as exc:
         return FngDetailResponse(
             rating="Unavailable",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, clearCache } from "@/lib/api";
 import type { TrendingData } from "@/types/trending";
 
 export function useTrending() {
@@ -26,7 +26,7 @@ export function useTrending() {
 
   const refetch = useCallback(() => {
     setIsLoading(true);
-    void fetchTrending();
+    void clearCache().then(() => fetchTrending());
   }, [fetchTrending]);
 
   useEffect(() => {

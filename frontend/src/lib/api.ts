@@ -10,3 +10,13 @@ export const api = axios.create({
   },
   timeout: 30000,
 });
+
+/** Clear the backend SQLite response cache. Returns true on success. */
+export async function clearCache(): Promise<boolean> {
+  try {
+    await api.post("/api/cache/clear");
+    return true;
+  } catch {
+    return false;
+  }
+}

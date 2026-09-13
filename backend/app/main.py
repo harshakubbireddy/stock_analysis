@@ -5,6 +5,7 @@ from app.api.ai import router as ai_router
 from app.api.congress import router as congress_router
 from app.api.market import router as market_router
 from app.api.thirteenf import router as thirteenf_router
+from app.core.cache import clear_all
 from app.core.config import settings
 
 app = FastAPI(
@@ -35,3 +36,9 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+@app.post("/api/cache/clear")
+async def clear_cache():
+    cleared = clear_all()
+    return {"status": "cleared", "rows_removed": cleared}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, clearCache } from "@/lib/api";
 import type { SentimentOverview } from "@/types/sentiment";
 
 export function useSentiment() {
@@ -26,7 +26,7 @@ export function useSentiment() {
 
   const refetch = useCallback(() => {
     setIsLoading(true);
-    void fetchSentiment();
+    void clearCache().then(() => fetchSentiment());
   }, [fetchSentiment]);
 
   useEffect(() => {

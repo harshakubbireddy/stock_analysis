@@ -5,14 +5,32 @@ import { useRef, useState } from "react";
 import { useChat } from "@/hooks/useChat";
 import { ChatComponent } from "@/components/ChatComponent";
 
+const THINKING_MESSAGES = [
+  "Thinking…",
+  "Let me look into that…",
+  "Checking the data…",
+  "Crunching the numbers…",
+  "Pulling the latest figures…",
+  "One moment…",
+  "Digging deep…",
+  "Generating a response…",
+  
+];
+
+function randomThinkingMessage() {
+  return THINKING_MESSAGES[Math.floor(Math.random() * THINKING_MESSAGES.length)];
+}
+
 export function AiChatDashboard() {
-  const { messages, isLoading, sendMessage, lastComponent } = useChat();
+  const { messages, isLoading, sendMessage, components } = useChat();
   const [input, setInput] = useState("");
+  const [thinking, setThinking] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
+    setThinking(randomThinkingMessage());
     sendMessage(input);
     setInput("");
   }
@@ -73,7 +91,12 @@ export function AiChatDashboard() {
                   </span>
                   <div className="rounded-xl rounded-tl-sm bg-gray-50 px-4 py-3 dark:bg-white/[0.03]">
                     <p className="text-sm whitespace-pre-wrap text-gray-700 dark:text-gray-300">
-                      {m.content}
+                      {m.content ||
+                        (isLoading && i === messages.length - 1 && (
+                          <span className="italic text-gray-400 dark:text-gray-500">
+                            {thinking}
+                          </span>
+                        ))}
                       {isLoading && i === messages.length - 1 && (
                         <span className="ml-1 inline-block h-3 w-2 animate-pulse bg-gray-400 align-middle" />
                       )}
@@ -111,9 +134,11 @@ export function AiChatDashboard() {
       </div>
 
       {/* Left: Generated UI components (outside chat) */}
-      <div className="lg:order-1 lg:flex-1">
-        {lastComponent ? (
-          <ChatComponent name={lastComponent.name} props={lastComponent.props} />
+      <div className="lg:order-1 lg:flex-1 space-y-6">
+        {components.length > 0 ? (
+          components.map((c, i) => (
+            <ChatComponent key={i} name={c.name} props={c.props} />
+          ))
         ) : (
           <div className="ui-card hidden p-6 lg:block">
             <p className="text-sm text-gray-500 dark:text-gray-400">
