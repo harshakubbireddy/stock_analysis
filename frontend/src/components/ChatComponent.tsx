@@ -352,8 +352,6 @@ function BondMarketOverview(props: Record<string, unknown>) {
   const curve = (props.curve as YieldRow[]) ?? [];
   const etfs =
     (props.etfs as { symbol: string; name: string; price: number | null; change_percent: number | null }[]) ?? [];
-  const cpi = (props.cpi_report as CpiReportProps) ?? null;
-  const events = (props.upcoming_events as EconEvent[]) ?? [];
   const spread = props.spread_13w_10y_bps as number | null;
   const shape = props.curve_shape as string;
   const maxYield = Math.max(...curve.map((c) => c.yield_pct ?? 0), 1);
@@ -449,24 +447,6 @@ function BondMarketOverview(props: Record<string, unknown>) {
             </div>
           ))}
         </div>
-      </div>
-
-      {/* CPI report (under bond market) */}
-      {cpi && (
-        <div className="ui-card p-6">
-          <CpiCard {...cpi} />
-        </div>
-      )}
-
-      {/* Upcoming events (under bond market) */}
-      <div className="ui-card p-6">
-        <div className="mb-3 flex items-center gap-2">
-          <span className="ui-icon-box h-8 w-8 bg-brand-50 text-brand-500 dark:bg-brand-500/10 dark:text-brand-300">
-            <CalendarDays size={16} aria-hidden="true" />
-          </span>
-          <p className="ui-title text-sm">Upcoming Economic Events</p>
-        </div>
-        <EventsList events={events} />
       </div>
     </div>
   );

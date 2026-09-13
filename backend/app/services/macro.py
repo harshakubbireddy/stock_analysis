@@ -236,8 +236,6 @@ def get_bond_market_overview() -> BondMarketOverviewResponse:
         spread_13w_10y_bps=spread,
         curve_shape=shape,
         etfs=_fetch_bond_etfs(),
-        cpi_report=get_cpi_report(),
-        upcoming_events=get_upcoming_economic_events(),
     )
     store_model(key, result)
     return result

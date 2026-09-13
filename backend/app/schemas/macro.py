@@ -49,5 +49,3 @@ class BondMarketOverviewResponse(BaseModel):
     spread_13w_10y_bps: float | None = None
     curve_shape: str = "Unknown"
     etfs: list[BondEtf] = []
-    cpi_report: CpiReportResponse = CpiReportResponse()
-    upcoming_events: list[EconomicEvent] = []

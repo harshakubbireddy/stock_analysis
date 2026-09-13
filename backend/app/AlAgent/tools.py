@@ -38,7 +38,9 @@ def stock_market_overview() -> dict:
 @tool
 def bond_market_overview() -> dict:
     """Call this when the user asks about the bond market, Treasury yields,
-    or fixed income today."""
+    yield curve, or fixed income today. This covers Treasury yields and bond
+    ETFs only — for inflation/CPI use the cpi_report tool, and for the
+    economic calendar use the upcoming_economic_events tool."""
     data = get_bond_market_overview()
     return {
         "component": "bond_market_overview",
@@ -48,8 +50,8 @@ def bond_market_overview() -> dict:
 
 @tool
 def cpi_report() -> dict:
-    """Call this when the user asks about inflation, CPI, or
-    consumer price index data."""
+    """Call this when the user asks about inflation, CPI, consumer price
+    index, or price data. This is separate from the bond market tool."""
     data = get_cpi_report()
     return {
         "component": "cpi_report",
@@ -59,8 +61,9 @@ def cpi_report() -> dict:
 
 @tool
 def upcoming_economic_events() -> dict:
-    """Call this when the user asks about upcoming economic events,
-    the economic calendar, Fed events, or macro reports this week."""
+    """Call this when the user asks about upcoming economic events, the
+    economic calendar, Fed events, or macro reports this week. This is
+    separate from the bond market and CPI tools."""
     events = get_upcoming_economic_events()
     return {
         "component": "upcoming_economic_events",
