@@ -46,7 +46,7 @@ from app.AlAgent.tools import (
     cpi_report,
     greet_user,
     smart_money,
-    stock_analysis,
+    stock_analysis_by_symbol,
     stock_market_overview,
     upcoming_economic_events,
 )
@@ -60,7 +60,7 @@ tools = [
     cpi_report,
     upcoming_economic_events,
     smart_money,
-    stock_analysis,
+    stock_analysis_by_symbol,
 ]
 llm_with_tools = llm.bind_tools(tools)
 

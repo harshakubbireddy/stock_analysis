@@ -14,6 +14,7 @@ from app.services.macro import (
 )
 from app.services.market_data import get_market_overview
 from app.services.smart_money_analysis import get_smart_money_analysis
+from app.services.stock_analysis import get_stock_analysis
 
 
 @tool
@@ -85,9 +86,15 @@ def smart_money() -> dict:
 
 
 @tool
-def stock_analysis() -> dict:
-    """Call this when the user asks about a specific stock's analysis."""
+def stock_analysis_by_symbol(symbol: str) -> dict:
+    """Call this when the user asks about a specific stock by ticker symbol
+    (e.g. AAPL, TSLA, MSFT, NVDA, GOOGL). Returns a full analysis: price,
+    52-week range, valuation (PE, PEG, P/B), growth, profitability,
+    balance sheet, analyst price targets + consensus, and charts. Always
+    pass the ticker symbol in uppercase."""
+    data = get_stock_analysis(symbol)
     return {
-        "component": "stock_analysis",
-        "props": {"summary": "Stock analysis data goes here"},
+        "component": "stock_analysis_by_symbol",
+        "props": data.model_dump(),
     }
+

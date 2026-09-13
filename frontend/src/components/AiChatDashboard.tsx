@@ -51,6 +51,14 @@ const SUGGESTION_CATEGORIES: SuggestionCategory[] = [
     ],
   },
   {
+    title: "Stock Analysis",
+    questions: [
+      "Analyze AAPL",
+      "What is the analysis for TSLA?",
+      "Give me a breakdown of NVDA",
+    ],
+  },
+  {
     title: "Smart Money",
     questions: [
       "What is smart money doing?",
