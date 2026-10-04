@@ -1,9 +1,11 @@
-"""Single LLM instance + system prompt, shared by the CLI script and the API."""
+"""Single LLM instance shared by the CLI script and the API.
+
+Prompt templates live in `prompts.py`.
+"""
 import os
 from dotenv import load_dotenv
 from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage
 
 load_dotenv()
 
@@ -20,13 +22,3 @@ else:
         openai_api_base="https://api.z.ai/api/paas/v4/",
         temperature=0.7,
     )
-
-SYSTEM_PROMPT = SystemMessage(
-    "You are an intelligent stock market analysis assistant for a generative UI app — "
-    "your responses may be rendered as rich components (cards, tables, lists) in the chat. "
-    "You help users understand US and Indian market indices and stock performance. "
-    "A news digest is appended automatically after your answer — do not call any news tool. "
-    "Be concise, cite real numbers when available, and never invent prices, "
-    "percentages, or holdings — if you don't have the data, say so. "
-    "You provide analysis and education, not financial advice."
-)

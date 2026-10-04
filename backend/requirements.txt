@@ -19,3 +19,4 @@ pydantic-settings
 python-dotenv
 httpx
 pdfplumber
+beautifulsoup4

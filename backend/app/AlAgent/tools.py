@@ -6,6 +6,7 @@ so it can summarize the result into its reply.
 The @tool docstring tells the LLM when to call each tool.
 """
 from langchain_core.tools import tool
+from pydantic import BaseModel
 
 from app.services.macro import (
     get_bond_market_overview,
@@ -15,6 +16,10 @@ from app.services.macro import (
 from app.services.market_data import get_market_overview
 from app.services.smart_money_analysis import get_smart_money_analysis
 from app.services.stock_analysis import get_stock_analysis
+
+
+def _component_response(name: str, data: BaseModel) -> dict:
+    return {"component": name, "props": data.model_dump()}
 
 
 @tool
@@ -29,11 +34,7 @@ def greet_user() -> str:
 @tool
 def stock_market_overview() -> dict:
     """Call this when the user asks about the overall stock market today."""
-    data = get_market_overview()
-    return {
-        "component": "stock_market_overview",
-        "props": data.model_dump(),
-    }
+    return _component_response("stock_market_overview", get_market_overview())
 
 
 @tool
@@ -42,22 +43,14 @@ def bond_market_overview() -> dict:
     yield curve, or fixed income today. This covers Treasury yields and bond
     ETFs only — for inflation/CPI use the cpi_report tool, and for the
     economic calendar use the upcoming_economic_events tool."""
-    data = get_bond_market_overview()
-    return {
-        "component": "bond_market_overview",
-        "props": data.model_dump(),
-    }
+    return _component_response("bond_market_overview", get_bond_market_overview())
 
 
 @tool
 def cpi_report() -> dict:
     """Call this when the user asks about inflation, CPI, consumer price
     index, or price data. This is separate from the bond market tool."""
-    data = get_cpi_report()
-    return {
-        "component": "cpi_report",
-        "props": data.model_dump(),
-    }
+    return _component_response("cpi_report", get_cpi_report())
 
 
 @tool
@@ -78,11 +71,7 @@ def smart_money() -> dict:
     whale activity, institutional flows, what big funds (Berkshire,
     Bridgewater, Citadel, ARK, Soros...) are buying/selling, or
     congressional (politician) stock trading."""
-    data = get_smart_money_analysis()
-    return {
-        "component": "smart_money",
-        "props": data.model_dump(),
-    }
+    return _component_response("smart_money", get_smart_money_analysis())
 
 
 @tool
@@ -92,9 +81,4 @@ def stock_analysis_by_symbol(symbol: str) -> dict:
     52-week range, valuation (PE, PEG, P/B), growth, profitability,
     balance sheet, analyst price targets + consensus, and charts. Always
     pass the ticker symbol in uppercase."""
-    data = get_stock_analysis(symbol)
-    return {
-        "component": "stock_analysis_by_symbol",
-        "props": data.model_dump(),
-    }
-
+    return _component_response("stock_analysis_by_symbol", get_stock_analysis(symbol))

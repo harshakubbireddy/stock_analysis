@@ -4,6 +4,7 @@ from email.utils import parsedate_to_datetime
 
 import httpx
 import yfinance as yf
+from bs4 import BeautifulSoup
 
 from app.core.cache import cached_model, store_model
 from app.schemas.stock_detail import ChartPoint, NewsFeedResponse, NewsItem, StockDetail
@@ -14,6 +15,12 @@ GOOGLE_NEWS_RSS = "https://news.google.com/rss/search"
 
 STOCK_DETAIL_TTL = 300
 NEWS_FEED_TTL = 600
+
+# How many articles to fetch full-text for AI summarization.
+AI_NEWS_COUNT = 5
+# Max characters of article body to send to the LLM.
+ARTICLE_MAX_CHARS = 1500
+ARTICLE_FETCH_TIMEOUT = 8
 
 
 def _round(value: object, digits: int = 2) -> float | None:
@@ -233,3 +240,41 @@ def get_news_feed(symbols: list[str]) -> NewsFeedResponse:
     result = NewsFeedResponse(items=items[:NEWS_FEED_LIMIT])
     store_model(key, result)
     return result
+
+
+def fetch_article_content(url: str) -> str | None:
+    """Fetch and extract the main text content from an article URL.
+
+    Returns up to ``ARTICLE_MAX_CHARS`` characters of cleaned body text, or
+    ``None`` if the page could not be retrieved or parsed. Used by the AI
+    agent's news node to summarize individual articles.
+    """
+    try:
+        response = httpx.get(
+            url,
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=ARTICLE_FETCH_TIMEOUT,
+            follow_redirects=True,
+        )
+        response.raise_for_status()
+    except Exception:
+        return None
+
+    try:
+        soup = BeautifulSoup(response.text, "html.parser")
+    except Exception:
+        return None
+
+    # Remove non-content elements.
+    for tag in soup(["script", "style", "nav", "footer", "header", "aside", "form"]):
+        tag.decompose()
+
+    # Prefer <article> or <main>, fall back to <body>.
+    container = soup.find("article") or soup.find("main") or soup.body
+    if container is None:
+        return None
+
+    text = container.get_text(separator=" ", strip=True)
+    if not text:
+        return None
+    return text[:ARTICLE_MAX_CHARS]

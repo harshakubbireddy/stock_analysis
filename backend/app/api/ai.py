@@ -37,7 +37,10 @@ def stream_response(message: str):
                 event = {
                     "type": "component",
                     "component": "news_summary",
-                    "props": {"items": state_update["news_items"]},
+                    "props": {
+                        "items": state_update["news_items"],
+                        "ai_take": state_update.get("ai_take", ""),
+                    },
                 }
                 yield f"data: {json.dumps(event)}\n\n"
             for msg in state_update.get("messages", []):

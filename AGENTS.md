@@ -87,3 +87,16 @@ External sources: yfinance, SEC EDGAR, House Clerk PDFs, alternative.me, Google 
 ## Mentoring mode
 
 `Mentor-mode.md` establishes an "I Build, You Guide" rule: the user builds the app themselves to learn. Default to guiding (approaches, trade-offs, questions, pseudo-code) rather than writing full implementations, unless the user explicitly asks for code.
+
+## Split module layout
+
+- `frontend/src/components/ChatComponent.tsx` is the small generative-UI registry. Its implementations live in `components/chat/`, with separate market, news, macro, smart-money, stock-analysis, chart, and financials components plus shared formatters. Their extracted types live in `types/chat.ts` and `types/stockAnalysis.ts`.
+- `frontend/src/components/ThirteenFDashboard.tsx` handles fund selection and loading/error states; `ThirteenFTransactions.tsx` contains transaction cards and grouped summaries.
+- `backend/app/services/stock_analysis.py` retains the cached stock-analysis entry point; `stock_analysis_helpers.py` contains financial-statement, analyst, calendar, and chart helpers.
+- `backend/app/services/thirteenf.py` retains HTTP fetching, caching, and public service functions; `thirteenf_parser.py` contains XML parsing and filing selection. Extracted helper names remain importable from the original service modules.
+
+## Verification
+
+- Frontend (from `frontend/`): `npm run lint`, `./node_modules/.bin/tsc --noEmit --incremental false`, and `npm run build`.
+- No committed automated test suite or frontend `test` script currently exists. For behavior-preserving refactors, compare mocked service outputs and rendered React markup against the pre-change revision, including null, zero, negative, and missing-data cases.
+- Backend offline smoke checks can use `.venv/bin/python -B` from `backend/`, import `app.main.app`, and exercise `/` and `/health` via FastAPI `TestClient`, plus `app.openapi()`. Set process-local `USE_LOCAL_LLM=true` and `OLLAMA_MODEL_GEMMA_LARGE=verification-only` to avoid requiring hosted-LLM credentials; these checks do not invoke the model or fetch market data.

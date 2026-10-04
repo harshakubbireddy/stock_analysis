@@ -26,6 +26,7 @@ class StockDetail(BaseModel):
 class NewsItem(BaseModel):
     title: str
     summary: str | None = None
+    ai_summary: str | None = None
     publisher: str | None = None
     url: str | None = None
     published: str | None = None
