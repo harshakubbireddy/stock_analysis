@@ -68,6 +68,36 @@ class Financials(BaseModel):
     quarterly: list[FinancialPeriod] = []
 
 
+class TechnicalIndicators(BaseModel):
+    """Derived from ~1y of daily closes via the `ta` package."""
+
+    # Trend — price vs 50 vs 200 DMA
+    trend: str = "neutral"  # "uptrend" | "downtrend" | "neutral"
+    trend_detail: str | None = None  # human-readable reason
+    golden_cross: bool | None = None  # True = 50 DMA above 200 DMA, False = below
+    sma_50: float | None = None
+    sma_200: float | None = None
+    ema_20: float | None = None
+    ema_50: float | None = None
+    price_vs_sma50_pct: float | None = None
+    price_vs_sma200_pct: float | None = None
+
+    # Momentum
+    rsi_14: float | None = None
+    rsi_signal: str = "neutral"  # "overbought" | "oversold" | "neutral"
+    macd: float | None = None
+    macd_signal: float | None = None
+    macd_hist: float | None = None
+    macd_trend: str = "neutral"  # "bullish" | "bearish" | "neutral"
+
+    # Volatility
+    bb_upper: float | None = None
+    bb_lower: float | None = None
+    bb_position_pct: float | None = None  # 0 = lower band, 100 = upper band
+    bb_signal: str = "neutral"  # "above_upper" | "below_lower" | "neutral"
+    atr_14: float | None = None
+
+
 class StockAnalysisResponse(BaseModel):
     symbol: str
     name: str
@@ -147,6 +177,9 @@ class StockAnalysisResponse(BaseModel):
 
     # Calendar
     calendar: EarningsCalendar = EarningsCalendar()
+
+    # Technical indicators (None for cache rows written before this field existed)
+    technicals: TechnicalIndicators | None = None
 
     # Charts
     sparkline_1mo: list[ChartPoint] = []

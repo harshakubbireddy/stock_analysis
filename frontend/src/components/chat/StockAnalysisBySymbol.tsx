@@ -6,6 +6,7 @@ import { ChatCard } from "./ChatCard";
 import { fmtBigMoney, fmtCompact, fmtNum, fmtPct, fmtRatioPct, pctStyle } from "./formatters";
 import { AnalystTargetsBar, FiftyTwoWeekRange, MetricTile, MiniSparkline, RecommendationBars } from "./StockAnalysisCharts";
 import { FinancialsSection } from "./StockFinancials";
+import { TechnicalsCard } from "./StockTechnicals";
 
 // =========================================================
 // Stock Analysis by Symbol — full deep-dive card
@@ -92,6 +93,9 @@ export function StockAnalysisBySymbol(propsRaw: Record<string, unknown>) {
           <MetricTile label="50 / 200 DMA" value={fmtNum(props.fifty_day_avg)} sub={`200d ${fmtNum(props.two_hundred_day_avg)}`} />
         </div>
       </ChatCard>
+
+      {/* Technicals — trend / RSI / MACD / Bollinger */}
+      {props.technicals && <TechnicalsCard technicals={props.technicals} />}
 
       {/* Analyst section */}
       <ChatCard

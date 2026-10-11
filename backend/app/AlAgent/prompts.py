@@ -18,10 +18,14 @@ AGENT_PROMPT = ChatPromptTemplate.from_messages([
         "system",
         "You are an intelligent stock market analysis assistant for a generative UI app — "
         "your responses may be rendered as rich components (cards, tables, lists) in the chat. "
-        "You help users understand US and Indian market indices and stock performance. "
-        "A news digest is appended automatically after your answer — do not call any news tool. "
+        "You help users understand US and Indian market indices, stock performance, "
+        "market sentiment, trending stocks, and crypto prices. "
+        "A news digest may be appended automatically after your answer — do not call any news tool. "
         "Be concise, cite real numbers when available, and never invent prices, "
         "percentages, or holdings — if you don't have the data, say so. "
+        "Stay strictly within markets, investing, and the economy: if any part of a "
+        "request is unrelated (coding, poems, weather, general trivia, personal tasks), "
+        "decline that part in one short sentence and answer only the finance-related part. "
         "You provide analysis and education, not financial advice.",
     ),
     MessagesPlaceholder("messages"),
@@ -33,17 +37,42 @@ AGENT_PROMPT = ChatPromptTemplate.from_messages([
 GUARDRAIL_PROMPT = ChatPromptTemplate.from_messages([
     (
         "system",
-        "Is this message about stocks, bonds, economy, inflation, "
-        "hedge funds / institutional investors, congressional trading, "
-        "or a greeting (hi, hello, hey)? Answer only 'yes' or 'no'.",
+        "You classify whether the user's latest message belongs in a stock market "
+        "assistant. Use the earlier messages only as context for follow-ups "
+        "(e.g. 'and yesterday?', 'what about Tesla?').\n"
+        "Labels:\n"
+        "- on_topic: stocks, bonds, crypto, economy, inflation, market sentiment, "
+        "trending stocks / top movers, hedge funds / institutional investors, "
+        "congressional trading, investing concepts, or a greeting (hi, hello, hey).\n"
+        "- ambiguous: finance-adjacent or unclear (commodities, real estate, forex, "
+        "personal finance, company or political news without a market angle).\n"
+        "- off_topic: clearly unrelated (coding, weather, recipes, poems, trivia).\n"
+        "Reply with exactly one label: on_topic, ambiguous, or off_topic.",
     ),
-    ("human", "{question}"),
+    MessagesPlaceholder("messages"),
 ])
 
 GUARDRAIL_REJECTION = (
     "I can only help with stock, bond, and economy-related questions. "
     "Could you ask something in those areas?"
 )
+
+# ---------------------------------------------------------------------------
+# News — does a headline digest add value to this answer?
+# ---------------------------------------------------------------------------
+NEWS_RELEVANCE_PROMPT = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        "Decide whether fetching today's news headlines would add value to the "
+        "assistant's answer.\n"
+        "- yes: the question is about current events, prices, performance, a "
+        "specific company, sector, asset, or 'what is happening' now.\n"
+        "- no: the question is definitional or educational (what is a P/E ratio, "
+        "how do bonds work), a greeting, or small talk.\n"
+        "Reply with exactly one word: yes or no.",
+    ),
+    ("human", "{question}"),
+])
 
 # ---------------------------------------------------------------------------
 # News — turn the user's question into a search query
@@ -78,12 +107,7 @@ GENERAL_TAKE_FORMAT = (
     "<2-3 sentences of analysis>\n\n"
 )
 
-STOCK_TAKE_INSTRUCTIONS = (
-    "Then, using the FUNDAMENTALS below together with the news, give your "
-    "take as an equity analyst answering three questions: the company's moat, "
-    "whether the stock is a buy, and how the financials look. Be specific and "
-    "cite the numbers; do not hedge every sentence."
-)
+# Used by TAKE_FORMATS["stock_analysis_by_symbol"] in the synthesize node.
 STOCK_TAKE_FORMAT = (
     "## What is the stock's moat?\n"
     "<2-4 sentences: what durable competitive advantage (brand, network effects, "
@@ -112,7 +136,6 @@ NEWS_DIGEST_PROMPT = ChatPromptTemplate.from_messages([
         "===TAKE===\n"
         "{take_format}"
         "*This is educational commentary, not financial advice.*\n\n"
-        "{context_block}"
         "Articles:\n{articles}",
     ),
     ("human", "{question}"),
@@ -121,12 +144,6 @@ NEWS_DIGEST_PROMPT = ChatPromptTemplate.from_messages([
 NEWS_DIGEST_GENERAL = NEWS_DIGEST_PROMPT.partial(
     take_instructions=GENERAL_TAKE_INSTRUCTIONS,
     take_format=GENERAL_TAKE_FORMAT,
-    context_block="",
-)
-
-NEWS_DIGEST_STOCK = NEWS_DIGEST_PROMPT.partial(
-    take_instructions=STOCK_TAKE_INSTRUCTIONS,
-    take_format=STOCK_TAKE_FORMAT,
 )
 
 NEWS_DONE_MESSAGE = (
@@ -135,7 +152,8 @@ NEWS_DONE_MESSAGE = (
 )
 
 # ---------------------------------------------------------------------------
-# Stock fundamentals block (fed into NEWS_DIGEST_STOCK as `context_block`)
+# Stock fundamentals block (rendered by context.stock_analysis_context and
+# fed into SYNTHESIS_PROMPT as `context_block`)
 # ---------------------------------------------------------------------------
 STOCK_FUNDAMENTALS_TEMPLATE = PromptTemplate.from_template(
     "Fundamentals:\n"
@@ -163,3 +181,97 @@ STOCK_FUNDAMENTALS_TEMPLATE = PromptTemplate.from_template(
 ANNUAL_ROW_TEMPLATE = PromptTemplate.from_template(
     "{year}: rev {revenue}, net {net_income}, FCF {free_cashflow}, EPS {eps}"
 )
+
+# ---------------------------------------------------------------------------
+# Synthesis — one final take per tool, combining the tool's DATA + the news
+# digest. `TAKE_FORMATS` is keyed by tool/component name; the middle section
+# is tool-specific, the outer skeleton is shared.
+# ---------------------------------------------------------------------------
+_NEWS_AND_TAKE = (
+    "## What the news says\n"
+    "<2-3 bullets from the NEWS that are relevant to the question>\n\n"
+    "## My Take\n"
+    "<2-3 sentences connecting DATA and NEWS: does the news explain the numbers, "
+    "is anything contradictory, what to watch next>\n\n"
+)
+
+TAKE_FORMATS = {
+    "stock_market_overview": (
+        "## Quick Summary\n<2-4 bullets with the key index moves and sentiment readings>\n\n"
+        "## Market Read\n"
+        "- US: <S&P 500, Nasdaq, Dow % moves> → <risk-on / risk-off / mixed>\n"
+        "- India: <Nifty, Sensex % moves>\n"
+        "- Sectors: leading <top 2>, lagging <bottom 2>\n"
+        "- Sentiment: VIX <value (rating)>, CNN Fear & Greed <value (rating)>\n\n"
+    ) + _NEWS_AND_TAKE,
+    "trending_stocks": (
+        "## Quick Summary\n<2-4 bullets: the standout gainers, losers, and volume names>\n\n"
+        "## Movers\n"
+        "- Top gainers: <3 symbols with % moves>\n"
+        "- Top losers: <3 symbols with % moves>\n"
+        "- Most active: <2-3 symbols with volume>\n"
+        "- Theme: <common sector or catalyst among the movers, if any>\n\n"
+    ) + _NEWS_AND_TAKE,
+    "crypto_market_overview": (
+        "## Quick Summary\n<2-4 bullets: BTC/ETH moves and sentiment>\n\n"
+        "## Crypto Read\n"
+        "- Prices: <BTC, ETH and 1-2 others with % moves>\n"
+        "- Breadth: <n of total coins up>\n"
+        "- Crypto Fear & Greed: <value (rating)> — <is sentiment extreme vs price action?>\n\n"
+    ) + _NEWS_AND_TAKE,
+    "bond_market_overview": (
+        "## Quick Summary\n<2-4 bullets: the key yield moves and curve shape>\n\n"
+        "## Yield Curve\n"
+        "- 3M / 2Y / 10Y / 30Y: <yields with today's bps change>\n"
+        "- Shape: <curve_shape>, 3M-10Y spread <bps>\n"
+        "- vs. a month ago: <10Y direction>\n"
+        "- ETFs: <TLT, HYG, TIP % moves>\n\n"
+    ) + _NEWS_AND_TAKE,
+    "cpi_report": (
+        "## Quick Summary\n<2-4 bullets: headline and core prints vs. trend>\n\n"
+        "## Inflation Snapshot\n"
+        "- Headline CPI: <YoY, MoM>\n"
+        "- Core CPI: <YoY>\n"
+        "- Trend: <cooling / sticky / re-accelerating, with the prior-month comparison>\n"
+        "- Rate implication: <what this means for Fed expectations>\n\n"
+    ) + _NEWS_AND_TAKE,
+    "upcoming_economic_events": (
+        "## Quick Summary\n<2-4 bullets: the events most likely to move markets>\n\n"
+        "## This Week's Calendar\n"
+        "- <date>: <title> [<impact>] — forecast <x>, prior <y>\n"
+        "- <... high-impact first, max 5 lines>\n\n"
+    ) + _NEWS_AND_TAKE,
+    "smart_money": (
+        "## Quick Summary\n<2-4 bullets: overall stance and the strongest signals>\n\n"
+        "## Institutional Flow\n"
+        "- Stance: <institution_stance>\n"
+        "- High-conviction: <issuers bought/sold by multiple funds>\n"
+        "- Per fund: <2-3 notable funds with stance and counts>\n"
+        "- Congress: <buys / sells, net $M, top buy, top sell>\n"
+        "- Agreement: <do funds and politicians point the same way?>\n\n"
+    ) + _NEWS_AND_TAKE,
+    "stock_analysis_by_symbol": (
+        "## Quick Summary\n<2-4 bullets: price action, valuation, analyst view>\n\n"
+        + STOCK_TAKE_FORMAT
+        + "## What the news says\n"
+        "<2-3 bullets from the NEWS that are relevant to this company>\n\n"
+    ),
+}
+
+SYNTHESIS_PROMPT = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        "You are an equity and macro analyst answering the user's question: {question}\n\n"
+        "Use ONLY the DATA and NEWS below. Cite the actual numbers. Never invent "
+        "prices, percentages, or holdings — write n/a if a value is missing. "
+        "Be specific and do not hedge every sentence.\n\n"
+        "Format your response EXACTLY as:\n"
+        "{take_format}"
+        "*This is educational commentary, not financial advice.*\n\n"
+        "DATA ({tool_name}):\n{context_block}\n\n"
+        "NEWS:\n{news_block}",
+    ),
+    ("human", "{question}"),
+])
+
+NO_NEWS_TEXT = "No recent headlines were available."

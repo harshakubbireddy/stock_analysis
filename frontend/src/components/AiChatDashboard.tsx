@@ -2,6 +2,8 @@
 
 import { Bot, HelpCircle, LayoutGrid, Send, Sparkles, User, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useChat } from "@/hooks/useChat";
 import { ChatComponent } from "@/components/ChatComponent";
 
@@ -32,6 +34,23 @@ const SUGGESTION_CATEGORIES: SuggestionCategory[] = [
       "How are stocks doing today?",
       "How is the market performing?",
       "Show me sector performance",
+      "Is the market fearful or greedy right now?",
+    ],
+  },
+  {
+    title: "Trends",
+    questions: [
+      "What are today's biggest movers?",
+      "Which stocks are gaining the most today?",
+      "Show me the most actively traded stocks",
+    ],
+  },
+  {
+    title: "Crypto",
+    questions: [
+      "How is crypto doing today?",
+      "What is the price of Bitcoin?",
+      "What is the crypto fear and greed index?",
     ],
   },
   {
@@ -77,6 +96,8 @@ const QUICK_STARTS = [
 
 const COMPONENT_LABELS: Record<string, string> = {
   stock_market_overview: "Market Overview",
+  trending_stocks: "Trending Stocks",
+  crypto_market_overview: "Crypto Market",
   bond_market_overview: "Bond Market",
   cpi_report: "Inflation",
   upcoming_economic_events: "Economic Calendar",
@@ -233,12 +254,12 @@ export function AiChatDashboard() {
                   <AssistantAvatar />
                   <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-gray-50 px-4 py-3 dark:bg-white/[0.04]">
                     {m.content ? (
-                      <p className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">
-                        {m.content}
+                      <div className="prose-news-summary text-sm text-gray-700 dark:text-gray-300">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                         {streaming && (
                           <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-brand-500 align-middle" />
                         )}
-                      </p>
+                      </div>
                     ) : streaming ? (
                       <div className="flex items-center gap-2.5">
                         <span className="flex items-center gap-1" aria-hidden="true">

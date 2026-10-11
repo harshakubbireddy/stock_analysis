@@ -25,15 +25,15 @@ def stream_response(message: str):
 
     - ToolMessage whose content is a dict with "component" → UI event
     - AIMessage with text content and no tool calls → text event
-      (includes the agent's news summary after news_summary runs)
+    - synthesize node update → news_summary component (headlines + AI take)
     """
     human_msg = HumanMessage(message)
     for output in graph.stream({"messages": [human_msg]}):
         for node_name, state_update in output.items():
             if not state_update:
                 continue
-            # News node: it fetched headlines → show them as a UI card
-            if node_name == "news" and state_update.get("news_items"):
+            # Synthesize node: headlines + the combined AI take → one UI card
+            if node_name == "synthesize" and (state_update.get("news_items") or state_update.get("ai_take")):
                 event = {
                     "type": "component",
                     "component": "news_summary",

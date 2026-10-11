@@ -189,6 +189,29 @@ def get_sentiment_overview() -> SentimentOverviewResponse:
     return result
 
 
+def get_stock_sentiment() -> SentimentOverviewResponse:
+    """VIX + CNN Fear & Greed — the sentiment cards shown alongside the stock market overview."""
+    key = "sentiment:stock"
+    hit = cached_model(key, SentimentOverviewResponse, ttl=OVERVIEW_CACHE_TTL)
+    if hit is not None:
+        return hit
+
+    result = SentimentOverviewResponse(cards=[_vix(), _cnn_fear_greed()])
+    store_model(key, result)
+    return result
+
+
+def get_crypto_sentiment() -> SentimentCard:
+    key = "sentiment:crypto"
+    hit = cached_model(key, SentimentCard, ttl=OVERVIEW_CACHE_TTL)
+    if hit is not None:
+        return hit
+
+    result = _crypto_fear_greed()
+    store_model(key, result)
+    return result
+
+
 def _crypto_fng_comparison(payload: list[dict], label: str, days_back: int) -> FngComparison | None:
     if len(payload) <= days_back:
         return None

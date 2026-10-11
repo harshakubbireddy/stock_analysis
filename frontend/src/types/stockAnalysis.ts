@@ -26,6 +26,34 @@ export type StockEarningsCalendar = {
   dividend_date: string | null;
   ex_dividend_date: string | null;
 };
+export type TrendLabel = "uptrend" | "downtrend" | "neutral";
+export type RsiSignal = "overbought" | "oversold" | "neutral";
+export type MacdTrend = "bullish" | "bearish" | "neutral";
+export type BollingerSignal = "above_upper" | "below_lower" | "neutral";
+
+export type StockTechnicals = {
+  trend: TrendLabel;
+  trend_detail: string | null;
+  golden_cross: boolean | null;
+  sma_50: number | null;
+  sma_200: number | null;
+  ema_20: number | null;
+  ema_50: number | null;
+  price_vs_sma50_pct: number | null;
+  price_vs_sma200_pct: number | null;
+  rsi_14: number | null;
+  rsi_signal: RsiSignal;
+  macd: number | null;
+  macd_signal: number | null;
+  macd_hist: number | null;
+  macd_trend: MacdTrend;
+  bb_upper: number | null;
+  bb_lower: number | null;
+  bb_position_pct: number | null;
+  bb_signal: BollingerSignal;
+  atr_14: number | null;
+};
+
 export type StockAnalysisProps = {
   symbol: string;
   name: string;
@@ -84,6 +112,8 @@ export type StockAnalysisProps = {
   recommendations: StockRecommendations;
   calendar: StockEarningsCalendar;
   financials: StockFinancials;
+  /** Null for responses cached before technicals existed. */
+  technicals?: StockTechnicals | null;
   sparkline_1mo: StockChartPoint[];
   intraday: StockChartPoint[];
   summary: string;

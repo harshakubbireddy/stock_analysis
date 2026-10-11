@@ -6,10 +6,12 @@
  */
 import { BondMarketOverview } from "./chat/BondMarketOverview";
 import { CpiReport } from "./chat/CpiReport";
+import { CryptoMarketOverview } from "./chat/CryptoMarketOverview";
 import { NewsSummary } from "./chat/NewsSummary";
 import { SmartMoney } from "./chat/SmartMoney";
 import { StockAnalysisBySymbol } from "./chat/StockAnalysisBySymbol";
 import { StockMarketOverview } from "./chat/StockMarketOverview";
+import { TrendingStocks } from "./chat/TrendingStocks";
 import { UpcomingEconomicEvents } from "./chat/UpcomingEconomicEvents";
 
 // =========================================================
@@ -20,6 +22,8 @@ const registry: Record<
   React.ComponentType<Record<string, unknown>>
 > = {
   stock_market_overview: StockMarketOverview,
+  trending_stocks: TrendingStocks,
+  crypto_market_overview: CryptoMarketOverview,
   bond_market_overview: BondMarketOverview,
   cpi_report: CpiReport,
   upcoming_economic_events: UpcomingEconomicEvents,

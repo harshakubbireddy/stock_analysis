@@ -7,6 +7,7 @@ from app.schemas.stock_analysis import (
     EarningsCalendar,
     FinancialPeriod,
     Financials,
+    TechnicalIndicators,
 )
 
 
@@ -158,6 +159,121 @@ def _financials(ticker) -> Financials:
     except Exception:
         pass
     return Financials(annual=annual, quarterly=quarterly)
+
+
+def _last(series) -> float | None:
+    """Last non-NaN value of a pandas Series, or None."""
+    try:
+        clean = series.dropna()
+        return float(clean.iloc[-1]) if len(clean) else None
+    except Exception:
+        return None
+
+
+def _pct_diff(price: float | None, ref: float | None) -> float | None:
+    if price is None or not ref:
+        return None
+    return round((price - ref) / ref * 100, 2)
+
+
+def _technicals(history) -> TechnicalIndicators:
+    """Compute trend / momentum / volatility indicators from daily OHLC history.
+
+    Expects >= ~200 rows for SMA200; shorter histories simply leave the
+    long-window fields as None. Every indicator is wrapped so one failure
+    doesn't blank the rest.
+    """
+    from ta.momentum import RSIIndicator
+    from ta.trend import EMAIndicator, MACD, SMAIndicator
+    from ta.volatility import AverageTrueRange, BollingerBands
+
+    tech = TechnicalIndicators()
+    try:
+        close = history["Close"].dropna()
+    except Exception:
+        return tech
+    if len(close) < 20:
+        return tech
+
+    price = float(close.iloc[-1])
+    n = len(close)
+
+    # Moving averages
+    try:
+        tech.ema_20 = _round(_last(EMAIndicator(close, window=20).ema_indicator()))
+        if n >= 50:
+            tech.sma_50 = _round(_last(SMAIndicator(close, window=50).sma_indicator()))
+            tech.ema_50 = _round(_last(EMAIndicator(close, window=50).ema_indicator()))
+        if n >= 200:
+            tech.sma_200 = _round(_last(SMAIndicator(close, window=200).sma_indicator()))
+    except Exception:
+        pass
+    tech.price_vs_sma50_pct = _pct_diff(price, tech.sma_50)
+    tech.price_vs_sma200_pct = _pct_diff(price, tech.sma_200)
+
+    # Trend classification: price vs 50 DMA vs 200 DMA
+    s50, s200 = tech.sma_50, tech.sma_200
+    if s50 is not None and s200 is not None:
+        tech.golden_cross = s50 > s200
+        if price > s50 > s200:
+            tech.trend = "uptrend"
+            tech.trend_detail = "Price above 50 DMA, 50 DMA above 200 DMA (golden cross)"
+        elif price < s50 < s200:
+            tech.trend = "downtrend"
+            tech.trend_detail = "Price below 50 DMA, 50 DMA below 200 DMA (death cross)"
+        else:
+            tech.trend = "neutral"
+            tech.trend_detail = (
+                f"Mixed: price {'above' if price > s50 else 'below'} 50 DMA, "
+                f"50 DMA {'above' if s50 > s200 else 'below'} 200 DMA"
+            )
+    elif s50 is not None:
+        tech.trend = "uptrend" if price > s50 else "downtrend"
+        tech.trend_detail = f"Price {'above' if price > s50 else 'below'} 50 DMA (200 DMA unavailable)"
+
+    # RSI
+    try:
+        tech.rsi_14 = _round(_last(RSIIndicator(close, window=14).rsi()))
+        if tech.rsi_14 is not None:
+            tech.rsi_signal = (
+                "overbought" if tech.rsi_14 >= 70 else "oversold" if tech.rsi_14 <= 30 else "neutral"
+            )
+    except Exception:
+        pass
+
+    # MACD (12/26/9)
+    try:
+        if n >= 35:
+            macd = MACD(close)
+            tech.macd = _round(_last(macd.macd()), 3)
+            tech.macd_signal = _round(_last(macd.macd_signal()), 3)
+            tech.macd_hist = _round(_last(macd.macd_diff()), 3)
+            if tech.macd_hist is not None:
+                tech.macd_trend = "bullish" if tech.macd_hist > 0 else "bearish" if tech.macd_hist < 0 else "neutral"
+    except Exception:
+        pass
+
+    # Bollinger Bands (20, 2σ)
+    try:
+        bb = BollingerBands(close, window=20, window_dev=2)
+        tech.bb_upper = _round(_last(bb.bollinger_hband()))
+        tech.bb_lower = _round(_last(bb.bollinger_lband()))
+        if tech.bb_upper is not None and tech.bb_lower is not None and tech.bb_upper != tech.bb_lower:
+            tech.bb_position_pct = round((price - tech.bb_lower) / (tech.bb_upper - tech.bb_lower) * 100, 1)
+            tech.bb_signal = (
+                "above_upper" if price > tech.bb_upper else "below_lower" if price < tech.bb_lower else "neutral"
+            )
+    except Exception:
+        pass
+
+    # ATR (14)
+    try:
+        high, low = history["High"], history["Low"]
+        tech.atr_14 = _round(_last(AverageTrueRange(high, low, history["Close"], window=14).average_true_range()))
+    except Exception:
+        pass
+
+    return tech
 
 
 def _calendar(ticker) -> EarningsCalendar:

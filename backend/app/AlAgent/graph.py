@@ -1,38 +1,45 @@
-"""LangGraph agent: guardrail → agent (LLM + tools) → tools → (agent | news) → END
+"""LangGraph agent: guardrail → agent (LLM + tools) → tools → (agent | news) → synthesize → END
 
 Flow:
   User message
       │
       ▼
   ┌──────────┐
-  │ guardrail │ ── off topic ──→ rejection message ──→ END
-  │ (classify)│ ── on topic ──┐
-  └──────────┘                │
-                              ▼
-                      ┌──────────┐
-                      │  agent   │ ── no tool calls ──────┐
-                      │ (LLM +   │ ── has tool calls ──┐  │
-                      │  tools)  │                    │  │
-                      └──────────┘                    ▼  │
-                                             ┌──────────┐│
-                                             │  tools   ││
-                                             │(execute) ││
-                                             └────┬─────┘│
-                                    text result │        │ component result
-                                                ▼        │
-                                              agent ─────┘
-                                                        │
-                                            (final answer)
-                                                        ▼
-                                                ┌──────────────┐
-                                                │  news node   │
-                                                │ LLM picks    │
-                                                │ query → fetch│
-                                                │ → summarize  │
-                                                └──────┬───────┘
-                                                       ▼
-                                                      END
+  │ guardrail │ ── off_topic ──→ rejection message ──→ END
+  │ (label,   │ ── on_topic / ambiguous ──┐
+  │ last 3    │                           │
+  │ messages) │                           │
+  └──────────┘                            │
+                                          ▼
+                                  ┌──────────┐
+                                  │  agent   │ ── no tool calls ──→ news relevant? ── no ──→ END
+                                  │ (LLM +   │ ── has tool calls ──┐             │ yes
+                                  │  tools)  │                    │             │
+                                  └──────────┘                    ▼             │
+                                                         ┌──────────┐           │
+                                                         │  tools   │           │
+                                                         │(execute) │           │
+                                                         └────┬─────┘           │
+                                                text result │   │ component     │
+                                                            ▼   │ result        │
+                                                          agent │               │
+                                                                ▼               ▼
+                                                        ┌──────────────┐
+                                                        │  news node   │
+                                                        │ LLM picks    │
+                                                        │ query → fetch│
+                                                        │ → summarize  │
+                                                        └──────┬───────┘
+                                                               ▼
+                                                      ┌────────────────┐
+                                                      │  synthesize    │
+                                                      │ per tool: DATA │
+                                                      │ + news → take  │
+                                                      └───────┬────────┘
+                                                              ▼
+                                                             END
 """
+import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated, TypedDict
@@ -42,28 +49,32 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
+from app.AlAgent.context import CONTEXT_BUILDERS
 from app.AlAgent.llm import llm
 from app.AlAgent.prompts import (
     AGENT_PROMPT,
-    ANNUAL_ROW_TEMPLATE,
     ARTICLE_BLOCK_TEMPLATE,
     GUARDRAIL_PROMPT,
     GUARDRAIL_REJECTION,
     NEWS_DIGEST_GENERAL,
-    NEWS_DIGEST_STOCK,
     NEWS_DONE_MESSAGE,
     NEWS_QUERY_PROMPT,
+    NEWS_RELEVANCE_PROMPT,
     NO_ARTICLES_TEXT,
     NO_CONTENT_TEXT,
-    STOCK_FUNDAMENTALS_TEMPLATE,
+    NO_NEWS_TEXT,
+    SYNTHESIS_PROMPT,
+    TAKE_FORMATS,
 )
 from app.AlAgent.tools import (
     bond_market_overview,
     cpi_report,
+    crypto_market_overview,
     greet_user,
     smart_money,
     stock_analysis_by_symbol,
     stock_market_overview,
+    trending_stocks,
     upcoming_economic_events,
 )
 from app.core.cache import get_raw, set_raw
@@ -73,6 +84,8 @@ from app.services.stock_detail import AI_NEWS_COUNT, fetch_article_content, get_
 tools = [
     greet_user,
     stock_market_overview,
+    trending_stocks,
+    crypto_market_overview,
     bond_market_overview,
     cpi_report,
     upcoming_economic_events,
@@ -83,25 +96,65 @@ llm_with_tools = llm.bind_tools(tools)
 
 
 # State: a list of messages that accumulates as nodes run, plus the latest
-# fetched news items (written by the news node, read by the API for the UI card)
-# and the AI's overall take (also rendered in the News Summary card).
+# fetched news items (written by the news node, read by the API for the UI card),
+# the AI's news-only take (rendered in the News Summary card), and one
+# synthesized data+news take per tool called this turn (written by synthesize).
 class State(TypedDict):
     messages: Annotated[list, add_messages]
     news_items: list
     ai_take: str
+    tool_takes: list
+
+
+def _latest_question(state: State) -> str:
+    """The user's current question = the most recent HumanMessage."""
+    return next(
+        (m.content for m in reversed(state["messages"]) if isinstance(m, HumanMessage)), ""
+    )
+
+
+def _tool_results_this_turn(state: State) -> dict[str, dict]:
+    """Component results from every ToolMessage after the latest HumanMessage,
+    keyed by component name (latest wins). Errored results are skipped."""
+    results: dict[str, dict] = {}
+    for msg in reversed(state["messages"]):
+        if isinstance(msg, HumanMessage):
+            break
+        if not isinstance(msg, ToolMessage) or not isinstance(msg.content, str):
+            continue
+        try:
+            result = json.loads(msg.content)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(result, dict) or "component" not in result:
+            continue
+        props = result.get("props") or {}
+        if props.get("error") or result["component"] in results:
+            continue
+        results[result["component"]] = props
+    return results
 
 
 # --- Node 1: Guardrail ---
+GUARDRAIL_CONTEXT_MESSAGES = 3  # latest human message + up to 2 prior turns
+
+
 def guardrail_node(state: State) -> dict:
-    """Ask the LLM: is this question about stocks/bonds/economy?
-    If no, return a polite rejection (and the graph ends).
-    If yes, return {} (no changes) and the graph continues to the agent.
+    """Ask the LLM to label the latest message: on_topic | ambiguous | off_topic.
+    Only a clear off_topic label rejects (ambiguous passes through — the agent
+    prompt's refusal rule is the second line of defense). The last few
+    messages are included so follow-ups like "and yesterday?" are classified
+    with context rather than in isolation.
     """
-    user_msg = state["messages"][-1]
-    check = (GUARDRAIL_PROMPT | llm).invoke({"question": user_msg.content})
-    if check.content.strip().lower() == "no":
+    recent = [
+        m for m in state["messages"][-GUARDRAIL_CONTEXT_MESSAGES:]
+        if isinstance(m, (HumanMessage, AIMessage)) and isinstance(m.content, str) and m.content
+    ]
+    check = (GUARDRAIL_PROMPT | llm).invoke({"messages": recent})
+    label = check.content.strip().lower()
+    if label.startswith("off_topic") or "off_topic" in label:
         return {"messages": [AIMessage(GUARDRAIL_REJECTION)]}
-    return {}  # on-topic: pass through unchanged
+    return {}  # on_topic / ambiguous / unparseable: pass through unchanged
 
 
 def route_after_guardrail(state: State) -> str:
@@ -124,15 +177,24 @@ def agent_node(state: State) -> dict:
     return {"messages": [response]}
 
 
+def _news_is_relevant(state: State) -> bool:
+    """Ask the LLM whether a headline digest adds value to this answer.
+    Definitional / educational questions and greetings skip the news node.
+    Fails open (fetch news) if the reply is unparseable."""
+    question = _latest_question(state)
+    verdict = (NEWS_RELEVANCE_PROMPT | llm).invoke({"question": question}).content
+    return not verdict.strip().lower().startswith("no")
+
+
 def should_continue(state: State) -> str:
     """After the agent responds:
     - if it called tools → go to tools node
-    - if it didn't → go to news node
+    - if it answered directly → news node only when news adds value, else END
     """
     last = state["messages"][-1]
     if hasattr(last, "tool_calls") and last.tool_calls:
         return "tools"
-    return "news"
+    return "news" if _news_is_relevant(state) else END
 
 
 # --- Node 3: Tools ---
@@ -142,7 +204,8 @@ def should_continue(state: State) -> str:
 def route_after_tools(state: State) -> str:
     """After tools run, look at the batch of new ToolMessages (in reverse):
     - any plain text result (e.g. greet_user) → back to agent to phrase it
-    - all UI components → go to the news node (components already streamed)
+    - all UI components → go to the news node (components already streamed);
+      the synthesize node writes the data+news take afterwards
     """
     for msg in reversed(state["messages"]):
         if not isinstance(msg, ToolMessage):
@@ -197,124 +260,17 @@ def _parse_ai_news_response(text: str, count: int) -> tuple[list[str], str]:
     return summaries, take
 
 
-def _fmt(v, suffix: str = "", digits: int = 2) -> str:
-    if v is None:
-        return "n/a"
-    if isinstance(v, (int, float)):
-        a = abs(v)
-        if a >= 1e12:
-            return f"{v / 1e12:.2f}T{suffix}"
-        if a >= 1e9:
-            return f"{v / 1e9:.1f}B{suffix}"
-        if a >= 1e6:
-            return f"{v / 1e6:.0f}M{suffix}"
-        return f"{v:.{digits}f}{suffix}"
-    return f"{v}{suffix}"
-
-
-def _ratio_pct(v) -> str:
-    return _fmt(v * 100, "%", 1) if isinstance(v, (int, float)) else "n/a"
-
-
-def _stock_analysis_context(state: State) -> tuple[str, str] | None:
-    """If the agent ran stock_analysis_by_symbol this turn, return
-    (symbol, compact fundamentals text) for the LLM's take. Else None."""
-    for msg in reversed(state["messages"]):
-        if not isinstance(msg, ToolMessage) or not isinstance(msg.content, str):
-            continue
-        if '"stock_analysis_by_symbol"' not in msg.content:
-            continue
-        try:
-            p = json.loads(msg.content).get("props", {})
-        except (json.JSONDecodeError, AttributeError):
-            continue
-        if not p or p.get("error"):
-            continue
-
-        t = p.get("analyst_targets") or {}
-        r = p.get("recommendations") or {}
-        fin = (p.get("financials") or {}).get("annual") or []
-        annual = "; ".join(
-            ANNUAL_ROW_TEMPLATE.format(
-                year=(row.get("period") or "?")[:4],
-                revenue=_fmt(row.get("revenue")),
-                net_income=_fmt(row.get("net_income")),
-                free_cashflow=_fmt(row.get("free_cashflow")),
-                eps=_fmt(row.get("eps")),
-            )
-            for row in fin[:5]
-        ) or "n/a"
-
-        text = STOCK_FUNDAMENTALS_TEMPLATE.format(
-            name=p.get("name"),
-            symbol=p.get("symbol"),
-            sector=p.get("sector") or "n/a",
-            industry=p.get("industry") or "n/a",
-            country=p.get("country") or "n/a",
-            description=(p.get("description") or "")[:600] or "n/a",
-            price=_fmt(p.get("price")),
-            change_percent=_fmt(p.get("change_percent"), "%"),
-            low_52w=_fmt(p.get("fifty_two_week_low")),
-            high_52w=_fmt(p.get("fifty_two_week_high")),
-            position_52w=_fmt(p.get("fifty_two_week_position_pct"), "%", 0),
-            avg_50d=_fmt(p.get("fifty_day_avg")),
-            avg_200d=_fmt(p.get("two_hundred_day_avg")),
-            beta=_fmt(p.get("beta")),
-            market_cap=_fmt(p.get("market_cap")),
-            enterprise_value=_fmt(p.get("enterprise_value")),
-            trailing_pe=_fmt(p.get("trailing_pe")),
-            forward_pe=_fmt(p.get("forward_pe")),
-            peg_ratio=_fmt(p.get("peg_ratio")),
-            price_to_book=_fmt(p.get("price_to_book")),
-            price_to_sales=_fmt(p.get("price_to_sales")),
-            dividend_yield=_fmt(p.get("dividend_yield"), "%"),
-            revenue_growth=_ratio_pct(p.get("revenue_growth")),
-            earnings_growth=_ratio_pct(p.get("earnings_growth")),
-            earnings_quarterly_growth=_ratio_pct(p.get("earnings_quarterly_growth")),
-            gross_margin=_ratio_pct(p.get("gross_margin")),
-            operating_margin=_ratio_pct(p.get("operating_margin")),
-            profit_margin=_ratio_pct(p.get("profit_margin")),
-            return_on_equity=_ratio_pct(p.get("return_on_equity")),
-            return_on_assets=_ratio_pct(p.get("return_on_assets")),
-            total_cash=_fmt(p.get("total_cash")),
-            total_debt=_fmt(p.get("total_debt")),
-            debt_to_equity=_fmt(p.get("debt_to_equity")),
-            current_ratio=_fmt(p.get("current_ratio")),
-            free_cashflow=_fmt(p.get("free_cashflow")),
-            operating_cashflow=_fmt(p.get("operating_cashflow")),
-            short_percent_of_float=_ratio_pct(p.get("short_percent_of_float")),
-            num_analysts=r.get("num_analysts", 0),
-            consensus=r.get("consensus", "n/a"),
-            strong_buy=r.get("strong_buy", 0),
-            buy=r.get("buy", 0),
-            hold=r.get("hold", 0),
-            sell=r.get("sell", 0),
-            strong_sell=r.get("strong_sell", 0),
-            target_low=_fmt(t.get("low")),
-            target_mean=_fmt(t.get("mean")),
-            target_high=_fmt(t.get("high")),
-            target_upside=_fmt(t.get("upside_pct"), "%", 1),
-            annual_financials=annual,
-        )
-        return str(p.get("symbol", "")), text
-    return None
-
-
 def news_node(state: State) -> dict:
     """Deterministic news step — cannot be skipped:
     1. LLM turns the user's question into a search query
     2. Fetch latest headlines from Google News
     3. Fetch full article content (best-effort, parallel)
-    4. Single LLM call: per-article summaries + overall AI take
-       (if a stock analysis ran this turn, the take also uses its fundamentals
-       and answers: moat? buy? financials?)
-    5. Return news items (with ai_summary) + ai_take for the UI card
+    4. Single LLM call: per-article summaries + a news-only take
+    5. Return news items (with ai_summary) + news-only ai_take
+    The synthesize node then owns the News Summary card: it replaces ai_take
+    with the data-aware per-tool takes when any component tool ran.
     """
-    # The user's question is the first human message.
-    question = next(
-        (m.content for m in state["messages"] if isinstance(m, HumanMessage)), ""
-    )
-    stock_ctx = _stock_analysis_context(state)
+    question = _latest_question(state)
 
     # Step 1: LLM picks the search query
     query = (NEWS_QUERY_PROMPT | llm).invoke({"question": question}).content.strip()
@@ -324,16 +280,10 @@ def news_node(state: State) -> dict:
     items = feed.items
 
     # Check cache for AI summaries + take (keyed by query, same TTL as news).
-    # Stock-analysis takes are keyed separately so a generic news take for the
-    # same query is never reused for the moat/buy/financials format.
-    cache_key = f"news_ai:stock:{stock_ctx[0]}:{query}" if stock_ctx else f"news_ai:{query}"
+    cache_key = f"news_ai:{query}"
     cached = get_raw(cache_key, 600)
     if cached:
-        return {
-            "messages": [AIMessage(NEWS_DONE_MESSAGE)],
-            "news_items": cached["items"],
-            "ai_take": cached["ai_take"],
-        }
+        return {"news_items": cached["items"], "ai_take": cached["ai_take"]}
 
     # Step 3: fetch full article content in parallel (best-effort)
     urls = [item.url for item in items]
@@ -353,17 +303,10 @@ def news_node(state: State) -> dict:
         for i, item in enumerate(items)
     ) or NO_ARTICLES_TEXT
 
-    # Pick the digest variant: stock take (moat / buy / financials) when a
-    # stock analysis ran this turn, otherwise the general quick-summary take.
-    if stock_ctx:
-        chain = NEWS_DIGEST_STOCK | llm
-        inputs = {"question": question, "articles": articles_text, "context_block": stock_ctx[1]}
-    else:
-        chain = NEWS_DIGEST_GENERAL | llm
-        inputs = {"question": question, "articles": articles_text}
-
     try:
-        response = chain.invoke(inputs)
+        response = (NEWS_DIGEST_GENERAL | llm).invoke(
+            {"question": question, "articles": articles_text}
+        )
         summaries, take = _parse_ai_news_response(response.content, len(items))
     except Exception:
         summaries = [""] * len(items)
@@ -379,10 +322,67 @@ def news_node(state: State) -> dict:
     # Cache the AI-summarized result
     set_raw(cache_key, {"items": news_items_dump, "ai_take": take})
 
+    return {"news_items": news_items_dump, "ai_take": take}
+
+
+# --- Node 5: Synthesize (one data+news take per tool called this turn) ---
+def _news_block(state: State) -> str:
+    lines = [
+        f"- {item.get('title')}: {item.get('ai_summary') or '(headline only)'}"
+        for item in state.get("news_items") or []
+    ]
+    return "\n".join(lines) or NO_NEWS_TEXT
+
+
+def synthesize_node(state: State) -> dict:
+    """For each component tool that ran this turn, make one LLM call that
+    combines the tool's DATA (via its context builder) with the news digest
+    and writes a final take in that tool's format. Everything lands in the
+    News Summary card: `ai_take` becomes the joined per-tool takes, or stays
+    the news-only take when no component tool ran. The API emits the card
+    from this node's update, followed by a short confirmation in the chat.
+    """
+    question = _latest_question(state)
+    news_block = _news_block(state)
+    takes: list[dict] = []
+
+    for name, props in _tool_results_this_turn(state).items():
+        builder = CONTEXT_BUILDERS.get(name)
+        take_format = TAKE_FORMATS.get(name)
+        if not builder or not take_format:
+            continue
+        try:
+            context_block = builder(props)
+        except Exception:
+            continue
+
+        digest = hashlib.sha1(f"{question}|{context_block}|{news_block}".encode()).hexdigest()
+        cache_key = f"take:{name}:{digest}"
+        cached = get_raw(cache_key, 600)
+        if cached:
+            takes.append(cached)
+            continue
+
+        try:
+            take = (SYNTHESIS_PROMPT | llm).invoke({
+                "question": question,
+                "tool_name": name,
+                "take_format": take_format,
+                "context_block": context_block,
+                "news_block": news_block,
+            }).content.strip()
+        except Exception:
+            continue
+        entry = {"tool": name, "take": take}
+        set_raw(cache_key, entry)
+        takes.append(entry)
+
+    ai_take = "\n\n".join(t["take"] for t in takes) if takes else (state.get("ai_take") or "")
     return {
         "messages": [AIMessage(NEWS_DONE_MESSAGE)],
-        "news_items": news_items_dump,
-        "ai_take": take,
+        "news_items": state.get("news_items") or [],
+        "ai_take": ai_take,
+        "tool_takes": takes,
     }
 
 
@@ -392,17 +392,19 @@ graph_builder.add_node("guardrail", guardrail_node)
 graph_builder.add_node("agent", agent_node)
 graph_builder.add_node("tools", ToolNode(tools))
 graph_builder.add_node("news", news_node)
+graph_builder.add_node("synthesize", synthesize_node)
 
 graph_builder.add_edge(START, "guardrail")
 graph_builder.add_conditional_edges(
     "guardrail", route_after_guardrail, {"agent": "agent", END: END}
 )
 graph_builder.add_conditional_edges(
-    "agent", should_continue, {"tools": "tools", "news": "news"}
+    "agent", should_continue, {"tools": "tools", "news": "news", END: END}
 )
 graph_builder.add_conditional_edges(
     "tools", route_after_tools, {"agent": "agent", "news": "news"}
 )
-graph_builder.add_edge("news", END)
+graph_builder.add_edge("news", "synthesize")
+graph_builder.add_edge("synthesize", END)
 
 graph = graph_builder.compile()

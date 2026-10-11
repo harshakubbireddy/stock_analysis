@@ -1,7 +1,7 @@
 import pandas as pd
 import yfinance as yf
 
-from app.core.cache import cached_model, store_model
+from app.core.cache import cached_model, get_raw, set_raw, store_model
 from app.schemas.market import MarketOverviewResponse, MarketQuote
 
 CACHE_TTL_SECONDS = 300
@@ -21,6 +21,14 @@ INDIA_INDICES = [
 CRYPTO_ASSETS = [
     ("BTC-USD", "Bitcoin"),
     ("ETH-USD", "Ethereum"),
+]
+
+# Broader list for the dedicated crypto card in the AI chat.
+CRYPTO_QUOTE_ASSETS = CRYPTO_ASSETS + [
+    ("SOL-USD", "Solana"),
+    ("XRP-USD", "XRP"),
+    ("BNB-USD", "BNB"),
+    ("DOGE-USD", "Dogecoin"),
 ]
 
 US_SECTOR_ETFS = [
@@ -98,3 +106,14 @@ def get_market_overview() -> MarketOverviewResponse:
     )
     store_model(key, result)
     return result
+
+
+def get_crypto_quotes() -> list[MarketQuote]:
+    key = "market:crypto"
+    hit = get_raw(key, ttl=CACHE_TTL_SECONDS)
+    if hit is not None:
+        return [MarketQuote.model_validate(q) for q in hit]
+
+    quotes = _fetch_quotes(CRYPTO_QUOTE_ASSETS)
+    set_raw(key, [q.model_dump() for q in quotes])
+    return quotes

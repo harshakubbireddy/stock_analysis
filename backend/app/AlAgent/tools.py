@@ -13,9 +13,11 @@ from app.services.macro import (
     get_cpi_report,
     get_upcoming_economic_events,
 )
-from app.services.market_data import get_market_overview
+from app.services.market_data import get_crypto_quotes, get_market_overview
+from app.services.sentiment import get_crypto_sentiment, get_stock_sentiment
 from app.services.smart_money_analysis import get_smart_money_analysis
 from app.services.stock_analysis import get_stock_analysis
+from app.services.trending import get_trending
 
 
 def _component_response(name: str, data: BaseModel) -> dict:
@@ -33,8 +35,33 @@ def greet_user() -> str:
 
 @tool
 def stock_market_overview() -> dict:
-    """Call this when the user asks about the overall stock market today."""
-    return _component_response("stock_market_overview", get_market_overview())
+    """Call this when the user asks about the overall stock market today —
+    US/India indices, sector performance, or market sentiment (VIX, CNN
+    Fear & Greed). For crypto prices use crypto_market_overview; for
+    today's top movers use trending_stocks."""
+    props = get_market_overview().model_dump()
+    props["sentiment"] = [card.model_dump() for card in get_stock_sentiment().cards]
+    return {"component": "stock_market_overview", "props": props}
+
+
+@tool
+def trending_stocks() -> dict:
+    """Call this when the user asks about trending stocks, today's biggest
+    movers, top gainers, top losers, or the most actively traded stocks."""
+    return _component_response("trending_stocks", get_trending())
+
+
+@tool
+def crypto_market_overview() -> dict:
+    """Call this when the user asks about crypto, Bitcoin, Ethereum, or
+    other cryptocurrency prices and crypto market sentiment today."""
+    return {
+        "component": "crypto_market_overview",
+        "props": {
+            "quotes": [q.model_dump() for q in get_crypto_quotes()],
+            "fear_greed": get_crypto_sentiment().model_dump(),
+        },
+    }
 
 
 @tool

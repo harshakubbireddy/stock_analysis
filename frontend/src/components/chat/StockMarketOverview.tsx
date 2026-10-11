@@ -1,8 +1,9 @@
 "use client";
 
-import { Activity, Globe2, TrendingDown, TrendingUp } from "lucide-react";
+import { Activity, Gauge, Globe2, TrendingDown, TrendingUp } from "lucide-react";
 import { ChatCard } from "./ChatCard";
 import { marketSummary, pctBar, pctStyle } from "./formatters";
+import { SentimentTile, type SentimentCardData } from "./SentimentTiles";
 
 // =========================================================
 // Stock Market Overview — index grid cards + sector bars
@@ -52,7 +53,7 @@ function IndexGroup({ title, quotes }: { title: string; quotes: IndexQuote[] }) 
 export function StockMarketOverview(props: Record<string, unknown>) {
   const usa = (props.usa as IndexQuote[]) ?? [];
   const india = (props.india as IndexQuote[]) ?? [];
-  const crypto = (props.crypto as IndexQuote[]) ?? [];
+  const sentiment = (props.sentiment as SentimentCardData[]) ?? [];
   const sectors = (props.usa_sectors as { name: string; change_percent: number | null }[]) ?? [];
 
   const sp500 = usa.find((q) => q.name === "S&P 500");
@@ -79,7 +80,24 @@ export function StockMarketOverview(props: Record<string, unknown>) {
       >
         <IndexGroup title="United States" quotes={usa} />
         <IndexGroup title="India" quotes={india} />
-        <IndexGroup title="Crypto" quotes={crypto} />
+      </ChatCard>
+
+      {/* Sentiment */}
+      <ChatCard
+        title="Market Sentiment"
+        icon={Gauge}
+        description="Volatility and investor mood"
+        className="xl:col-span-2"
+      >
+        {sentiment.length > 0 ? (
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+            {sentiment.map((card) => (
+              <SentimentTile key={card.label} card={card} />
+            ))}
+          </div>
+        ) : (
+          <p className="ui-caption">Sentiment data unavailable</p>
+        )}
       </ChatCard>
 
       {/* Sector performance */}
@@ -87,9 +105,9 @@ export function StockMarketOverview(props: Record<string, unknown>) {
         title="Sector Performance"
         icon={Activity}
         description="US sector ETFs, sorted by today's move"
-        className="xl:col-span-2"
+        className="xl:col-span-5"
       >
-        <div className="space-y-2.5">
+        <div className="grid gap-x-8 gap-y-2.5 md:grid-cols-2">
           {sorted.map((s) => {
             const pct = s.change_percent ?? 0;
             const width = Math.min((Math.abs(pct) / maxAbs) * 100, 100);

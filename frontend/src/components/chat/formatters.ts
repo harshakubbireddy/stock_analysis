@@ -48,7 +48,8 @@ export function fmtNum(v: number | null, digits = 2): string {
 }
 
 export function fmtBigMoney(v: number | null): string {
-  return v == null ? "—" : `$${fmtCompact(v)}`;
+  if (v == null) return "—";
+  return `${v < 0 ? "-" : ""}$${fmtCompact(Math.abs(v))}`;
 }
 
 export function fmtPct(v: number | null, digits = 2): string {

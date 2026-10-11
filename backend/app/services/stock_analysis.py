@@ -19,6 +19,7 @@ from app.services.stock_analysis_helpers import (
     _recommendations,
     _round,
     _sparkline,
+    _technicals,
 )
 
 CACHE_TTL_SECONDS = 300
@@ -127,9 +128,11 @@ def get_stock_analysis(symbol: str) -> StockAnalysisResponse:
     # Financials (annual + quarterly)
     result.financials = _financials(ticker)
 
-    # Charts
+    # Charts + technicals — one 1y daily pull covers SMA200 and the 1mo sparkline
     try:
-        result.sparkline_1mo = _sparkline(ticker.history(period="1mo", interval="1d"))
+        daily = ticker.history(period="1y", interval="1d")
+        result.sparkline_1mo = _sparkline(daily.tail(22))
+        result.technicals = _technicals(daily)
     except Exception:
         pass
     try:
@@ -147,10 +150,19 @@ def get_stock_analysis(symbol: str) -> StockAnalysisResponse:
         if result.analyst_targets.mean and result.analyst_targets.upside_pct is not None
         else ""
     )
+    technical = ""
+    if result.technicals is not None:
+        t = result.technicals
+        parts = [f"Technicals: {t.trend} (50/200 DMA)"]
+        if t.rsi_14 is not None:
+            parts.append(f"RSI {t.rsi_14:.0f} ({t.rsi_signal})")
+        if t.macd_trend != "neutral":
+            parts.append(f"MACD {t.macd_trend}")
+        technical = " " + ", ".join(parts) + "."
     result.summary = (
         f"{result.name} ({symbol}) is {direction} {pct} today at "
         f"{result.price:.2f} {result.currency or ''}. "
-        f"Consensus: {consensus}{upside}."
+        f"Consensus: {consensus}{upside}.{technical}"
     )
 
     store_model(key, result)
